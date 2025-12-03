@@ -47,16 +47,17 @@ def hesapla_not(request: NotHesaplamaRequest):
     # Hesaplama: Vize %40 + Final/Büt %60
     gecme_notu = (vize * 0.40) + (son_not * 0.60)
     
-    # Geçme Kuralı: Ortalama >= 55 VE (Final veya Büt) >= 55
-    if gecme_notu >= 55 and son_not >= 55:
+    # GÜNCELLEME: Geçme notu 60'a yükseltildi.
+    # Geçme Kuralı: Ortalama >= 60 VE (Final veya Büt) >= 60
+    if gecme_notu >= 60 and son_not >= 60:
         durum = "Geçti"
-        detay = f"Ortalama ({gecme_notu:.2f}) ve {kaynak} notu ({son_not}) 55 barajını geçti."
+        detay = f"Ortalama ({gecme_notu:.2f}) ve {kaynak} notu ({son_not}) 60 barajını geçti."
     else:
         durum = "Geçmedi"
-        if son_not < 55:
-            detay = f"{kaynak} notu ({son_not}) 55'in altında."
+        if son_not < 60:
+            detay = f"{kaynak} notu ({son_not}) 60'in altında."
         else:
-            detay = f"Ortalama ({gecme_notu:.2f}) 55'in altında."
+            detay = f"Ortalama ({gecme_notu:.2f}) 60'in altında."
             
     return NotHesaplamaResponse(
         kullanilan_vize_notu=vize,
@@ -68,4 +69,5 @@ def hesapla_not(request: NotHesaplamaRequest):
 
 @app.get("/", tags=["Genel"])
 def read_root():
+
     return {"mesaj": "API çalışıyor. Dokümantasyon için /docs adresine gidin."}
