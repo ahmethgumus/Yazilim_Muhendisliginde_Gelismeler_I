@@ -1,62 +1,99 @@
-<!DOCTYPE html>
-<html lang="tr">
-<head>
-    <meta charset="UTF-8">
-    <title>Ödev Not Sistemi</title>
-    <style>
-        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f0f2f5; }
-        .card { background: white; padding: 2rem; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); width: 300px; }
-        h2 { text-align: center; color: #333; }
-        input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box; }
-        button { width: 100%; padding: 10px; background-color: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
-        button:hover { background-color: #0056b3; }
-        #sonuc { margin-top: 15px; text-align: center; font-weight: bold; }
-    </style>
-</head>
-<body>
-    <div class="card">
-        <h2>Not Hesapla</h2>
-        <input type="number" id="vize" placeholder="Vize Notunuz">
-        <input type="number" id="final" placeholder="Final Notunuz">
-        <button onclick="hesapla()">HESAPLA</button>
-        <div id="sonuc"></div>
-    </div>
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import Optional, List
+# Yeni eklenen kütüphane:
+from pymongo import MongoClient 
+import datetime
 
-    <script>
-        async function hesapla() {
-            const vize = document.getElementById('vize').value;
-            const finalNotu = document.getElementById('final').value;
-            const sonucDiv = document.getElementById('sonuc');
+# --- GÜVENLİK ---
+security = HTTPBearer()
+GIZLI_TOKEN = "gizlisifre123"
 
-            try {
-                // Backend'e istek atıyoruz (8000 portuna)
-                const response = await fetch('http://localhost:8000/hesapla', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': 'Bearer gizlisifre123' // Token burada gönderiliyor
-                    },
-                    body: JSON.stringify({
-                        vize_notu: parseFloat(vize),
-                        final_notu: parseFloat(finalNotu)
-                    })
-                });
+def token_dogrula(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    if credentials.credentials != GIZLI_TOKEN:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Geçersiz Token!",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return credentials.credentials
 
-                if (response.status === 401) {
-                    sonucDiv.innerText = "Hata: Yetkisiz Giriş (Token Geçersiz)!";
-                    sonucDiv.style.color = "red";
-                    return;
-                }
+# --- VERİTABANI BAĞLANTISI ---
+# Docker içinde servis adı "mongodb" olduğu için host olarak onu yazıyoruz.
+client = MongoClient("mongodb://mongodb:27017")
+db = client["okul_veritabani"]   # Veritabanı adı
+koleksiyon = db["notlar"]        # Tablo (Collection) adı
 
-                const data = await response.json();
-                sonucDiv.innerText = data.durum + " - " + data.aciklama;
-                sonucDiv.style.color = data.durum === "Geçti" ? "green" : "red";
+# --- MODELLER ---
+class NotHesaplamaRequest(BaseModel):
+    vize_notu: float
+    final_notu: float
+    butunleme_notu: Optional[float] = None 
 
-            } catch (error) {
-                sonucDiv.innerText = "Sunucuya bağlanılamadı!";
-                sonucDiv.style.color = "red";
-            }
-        }
-    </script>
-</body>
-</html>
+class NotHesaplamaResponse(BaseModel):
+    kullanilan_vize_notu: float
+    kullanilan_final_notu: float
+    gecme_notu: float
+    durum: str
+    aciklama: str
+
+# --- UYGULAMA ---
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.post("/hesapla", response_model=NotHesaplamaResponse, dependencies=[Depends(token_dogrula)])
+def hesapla_not(request: NotHesaplamaRequest):
+    vize = request.vize_notu
+    if request.butunleme_notu is not None:
+        son_not = request.butunleme_notu
+        kaynak = "Bütünleme"
+    else:
+        son_not = request.final_notu
+        kaynak = "Final"
+
+    gecme_notu = (vize * 0.40) + (son_not * 0.60)
+    
+    if gecme_notu >= 60 and son_not >= 60:
+        durum = "Geçti"
+        aciklama = f"Tebrikler! Ortalama: {gecme_notu:.2f}"
+    else:
+        durum = "Geçmedi"
+        aciklama = f"Maalesef kaldınız. Ortalama: {gecme_notu:.2f}"
+    
+    # --- VERİTABANINA KAYDETME İŞLEMİ ---
+    kayit = {
+        "vize": vize,
+        "final_veya_but": son_not,
+        "ortalama": round(gecme_notu, 2),
+        "durum": durum,
+        "tarih": datetime.datetime.now()
+    }
+    koleksiyon.insert_one(kayit) # MongoDB'ye yaz
+    # ------------------------------------
+
+    return NotHesaplamaResponse(
+        kullanilan_vize_notu=vize,
+        kullanilan_final_notu=son_not,
+        gecme_notu=round(gecme_notu, 2),
+        durum=durum,
+        aciklama=aciklama
+    )
+
+# Veritabanının çalıştığını test etmek için basit bir endpoint
+@app.get("/gecmis-kayitlar")
+def gecmis_listele():
+    kayitlar = []
+    # Son 10 kaydı getir, _id alanını (ObjectId) stringe çevir
+    for k in koleksiyon.find().sort("tarih", -1).limit(10):
+        k["_id"] = str(k["_id"])
+        kayitlar.append(k)
+    return kayitlar
