@@ -1,13 +1,17 @@
 version: '3.8'
 
 services:
+  # 1. Servis: Backend (Python API)
   backend:
     build: ./backend
     container_name: odev_backend
     ports:
       - "8000:8000"
     restart: always
+    depends_on:
+      - mongodb  # Backend çalışmadan önce Veritabanı çalışsın
 
+  # 2. Servis: Frontend (Web Arayüzü)
   frontend:
     build: ./frontend
     container_name: odev_frontend
@@ -16,3 +20,15 @@ services:
     restart: always
     depends_on:
       - backend
+
+  # 3. YENİ SERVİS: Veritabanı (MongoDB)
+  mongodb:
+    image: mongo:latest
+    container_name: odev_db
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db  # Veriler bilgisayarında kalsın, silinmesin
+
+volumes:
+  mongo_data:
