@@ -1,16 +1,35 @@
-# Vize-Final Not Hesaplama API
+# Öğrenci Not Hesaplama Sistemi
 
-Bu proje, Yazılım Mühendisliğinde Gelişmeler dersi için hazırlanmış basit bir not hesaplama servisidir.
-Kullanıcıdan vize, final (ve opsiyonel bütünleme) notlarını alarak geçme durumunu hesaplar.
+Bu proje, Docker üzerinde çalışan mikroservis mimarisine sahip bir not hesaplama uygulamasıdır.
 
-## Teknolojiler
-- Python (FastAPI)
-- Docker
+## Proje İçeriği ve Puanlama Kriterleri
+- **Docker & Compose:** Tüm sistem `docker-compose up` ile ayağa kalkar.
+- **Backend:** FastAPI (Python) - Port 8000
+- **Frontend:** HTML/JS (Nginx) - Port 8080
+- **Veritabanı:** MongoDB - Port 27017
+- **Dokümantasyon:** Swagger UI (`http://localhost:8000/docs`) adresinde aktiftir.
 
-## Docker ile İmaj Oluşturma (Ödev Gereksinimi)
-Aşağıdaki komut ile Docker imajı oluşturulabilir:
+## 1. MermaidJS Akış Diyagramı (10 Puan)
+Sistemin çalışma mantığını gösteren Sequence (Sıralama) diyagramı aşağıdadır:
 
-`docker build -t not-hesaplama-api .`
+```mermaid
+sequenceDiagram
+    participant User as Kullanıcı
+    participant Front as Frontend (Web)
+    participant API as Backend (FastAPI)
+    participant DB as MongoDB
 
-## Çalıştırma
-`docker-compose up -d` komutu ile proje ayağa kaldırılabilir.
+    User->>Front: Vize ve Final Notunu Girer
+    Front->>API: POST /hesapla (Bearer Token ile)
+    Note right of Front: Authorization: Bearer gizlisifre123
+    
+    alt Token Geçerli ise
+        API->>API: Notu Hesapla (Vize %40 + Final %60)
+        API->>DB: Sonucu Kaydet (Insert)
+        DB-->>API: Kayıt Başarılı
+        API-->>Front: Sonuç JSON (Geçti/Kaldı)
+        Front-->>User: Ekrana Yazdır (Yeşil/Kırmızı)
+    else Token Geçersiz ise
+        API-->>Front: 401 Unauthorized
+        Front-->>User: Hata Mesajı Göster
+    end
